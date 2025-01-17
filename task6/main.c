@@ -1,4 +1,4 @@
-#include "file-system-operator.h"
+#include "operator.h"
 #include <stdio.h>
 
 #define MAX_COMMAND_LENGTH 20
@@ -135,6 +135,25 @@ int main(int argc, char **argv)
         if (argc == 3)
         {
             operationResult = printTakenSpace(argv[2]);
+            if (operationResult == 0)
+            {
+                printf("Operation completed successfully\n");
+            }
+            else
+            {
+                printf("Operation failed\n");
+            }
+        }
+        else
+        {
+            printf("Invalid number of arguments\n");
+        }
+    }
+    else if (strcmp(argv[1], "print_memory_map") == 0)
+    {
+        if (argc == 3)
+        {
+            operationResult = printMemoryMap(argv[2]);
             if (operationResult == 0)
             {
                 printf("Operation completed successfully\n");

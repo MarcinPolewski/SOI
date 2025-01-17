@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <libgen.h>
 
 #define BLOCK_SIZE 4096
 #define MAX_FILE_NAME 255
