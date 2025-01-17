@@ -1,7 +1,4 @@
 #include "operator.h"
-#include <stdio.h>
-
-#define MAX_COMMAND_LENGTH 20
 
 int main(int argc, char **argv)
 {
@@ -12,8 +9,6 @@ int main(int argc, char **argv)
         printf("No instruction provided\n");
         return 1;
     }
-
-    // load disc information
 
     if (strcmp(argv[1], "ls") == 0)
     {
