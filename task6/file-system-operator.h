@@ -1,7 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
 #include <libgen.h>
 
 #define BLOCK_SIZE 4096
@@ -9,6 +8,15 @@
 
 #define FREE 0
 #define TAKEN 1
+
+/* Workaround for missing strnlen in older C standards */
+static size_t my_strnlen(const char *s, size_t maxlen)
+{
+    size_t i;
+    for (i = 0; i < maxlen && s[i] != '\0'; i++)
+        ;
+    return i;
+}
 
 struct DiscBasic
 {
@@ -37,37 +45,32 @@ struct Block
 
 int createDisc(char *discName, int discSize)
 {
-    int blockCount, fileDescriptorsSize, memoryMapSize, basicInfoSize, descriptorTableSize, blocksSize;
-    int firstBlockAddress, memoryMapAddress, mapElement, i;
+    int blockCount, memoryMapAddress, firstBlockAddress, mapElement, i;
     FILE *drive;
+    struct DiscBasic db;
+    struct FileDescriptor emptyDescriptor;
+    struct Block emptyBlock;
 
     blockCount = (discSize / BLOCK_SIZE) + 1;
 
-    // fileDescriptorsSize = blockCount * sizeof(int); /* max number of files is equal to number of blocks*/
-    // memoryMapSize = blockCount * sizeof(int);
-    // descriptorTableSize = blockCount * sizeof(struct FileDescriptor);
-    // blocksSize = blockCount * sizeof(struct Block);
-    // basicInfoSize = sizeof(struct DiscBasic);
     memoryMapAddress = sizeof(struct DiscBasic);
-    firstBlockAddress = memoryMapAddress + blockCount * (sizeof(int) + sizeof(struct FileDescriptor));
+    firstBlockAddress =
+        memoryMapAddress + blockCount * (sizeof(int) + sizeof(struct FileDescriptor));
 
-    struct DiscBasic db = {
-        discSize,
-        blockCount,
-        firstBlockAddress,
-        memoryMapAddress};
+    db.discSize = discSize;
+    db.blockCount = blockCount;
+    db.firstBlockAddress = firstBlockAddress;
+    db.memoryMapAddress = memoryMapAddress;
 
-    struct FileDescriptor emptyDescriptor = {
-        "",
-        FREE,
-        0,
-        0,
-        0};
+    strcpy(emptyDescriptor.fileName, "");
+    emptyDescriptor.descriptorState = FREE;
+    emptyDescriptor.firstBlockAddress = 0;
+    emptyDescriptor.nextFileDescriptorAddress = 0;
+    emptyDescriptor.fileDescriptorAddress = 0;
 
-    struct Block emptyBlock = {
-        FREE,
-        0,
-        ""};
+    emptyBlock.state = FREE;
+    emptyBlock.nextBlockAddress = 0;
+    memset(emptyBlock.data, 0, BLOCK_SIZE);
 
     drive = fopen(discName, "wb");
     if (drive == NULL)
@@ -76,7 +79,6 @@ int createDisc(char *discName, int discSize)
         return 1;
     }
 
-    /* save basic*/
     if (fwrite(&db, sizeof(struct DiscBasic), 1, drive))
     {
         printf("Written discbasic succesfully\n");
@@ -89,7 +91,6 @@ int createDisc(char *discName, int discSize)
         return 1;
     }
 
-    /* save memory map */
     mapElement = FREE;
     for (i = 0; i < blockCount; i++)
     {
@@ -106,7 +107,6 @@ int createDisc(char *discName, int discSize)
         }
     }
 
-    /* save file descriptors */
     for (i = 0; i < blockCount; i++)
     {
         if (fwrite(&fileDescriptor, sizeof(struct FileDescriptor), 1, drive))
@@ -122,7 +122,6 @@ int createDisc(char *discName, int discSize)
         }
     }
 
-    /* save blocks */
     for (i = 0; i < blockCount; i++)
     {
         if (fwrite(&emptyBlock, sizeof(struct Block), 1, drive))
@@ -137,6 +136,9 @@ int createDisc(char *discName, int discSize)
             return 1;
         }
     }
+
+    fclose(drive);
+    return 0;
 }
 
 int deleteDisc(char *discName)
@@ -148,31 +150,29 @@ struct DiscBasic loadDiscBasic(char *discName)
 {
     FILE *drive;
     struct DiscBasic db;
-
     drive = fopen(discName, "rb");
     if (drive == NULL)
     {
         printf("Error opening disc\n");
         exit(1);
     }
-
     if (!fread(&db, sizeof(struct DiscBasic), 1, drive))
     {
         printf("Failed to read superblock\n");
         fclose(drive);
         exit(1);
     }
-
     fclose(drive);
     return db;
 }
 
 int isBlockTaken(char *discName, int blockAddress)
 {
-    struct DiscBasic db = loadDiscBasic(discName);
+    struct DiscBasic db;
     FILE *drive;
     int mapElement;
 
+    db = loadDiscBasic(discName);
     drive = fopen(discName, "rb");
     if (drive == NULL)
     {
@@ -199,14 +199,18 @@ int isBlockTaken(char *discName, int blockAddress)
 
 struct FileDescriptor getFileDescriptor(char *fileName, char *discName)
 {
-    struct DiscBasic db = loadDiscBasic(discName);
-    FILE *drive = fopen(discName, "rb");
+    struct DiscBasic db;
+    FILE *drive;
+    int i;
+
+    db = loadDiscBasic(discName);
+    drive = fopen(discName, "rb");
     if (!drive)
         exit(-1);
 
     fseek(drive, db.memoryMapAddress + db.blockCount * sizeof(int), SEEK_SET);
 
-    for (int i = 0; i < db.blockCount; i++)
+    for (i = 0; i < (int)db.blockCount; i++)
     {
         struct FileDescriptor fd;
         if (fread(&fd, sizeof(fd), 1, drive) != 1)
@@ -225,14 +229,18 @@ struct FileDescriptor getFileDescriptor(char *fileName, char *discName)
 
 int performLsCommand(char *discName)
 {
-    struct DiscBasic db = loadDiscBasic(discName);
-    FILE *drive = fopen(discName, "rb");
+    struct DiscBasic db;
+    FILE *drive;
+    int i;
+
+    db = loadDiscBasic(discName);
+    drive = fopen(discName, "rb");
     if (!drive)
         exit(-1);
 
     fseek(drive, db.memoryMapAddress + db.blockCount * sizeof(int), SEEK_SET);
 
-    for (int i = 0; i < db.blockCount; i++)
+    for (i = 0; i < (int)db.blockCount; i++)
     {
         struct FileDescriptor fd;
         if (fread(&fd, sizeof(fd), 1, drive) != 1)
@@ -249,32 +257,36 @@ int performLsCommand(char *discName)
 
 int rmFile(char *fileName, char *discName)
 {
-    struct FileDescriptor fd = getFileDescriptor(fileName, discName);
-    struct DiscBasic db = loadDiscBasic(discName);
+    struct FileDescriptor fd;
+    struct DiscBasic db;
+    FILE *f;
+    unsigned currentBlock;
 
-    FILE *f = fopen(discName, "rb+");
+    fd = getFileDescriptor(fileName, discName);
+    db = loadDiscBasic(discName);
+
+    f = fopen(discName, "rb+");
     if (!f)
         return -1;
 
-    /* change all blocks nad memory map to free */
-    unsigned currentBlock = fd.firstBlockAddress;
+    currentBlock = fd.firstBlockAddress;
     while (currentBlock)
     {
-        fseek(f, db.memoryMapAddress + (currentBlock - 1) * sizeof(int), SEEK_SET);
+        struct Block blk;
         int freeVal = FREE;
+        fseek(f, db.memoryMapAddress + (currentBlock - 1) * sizeof(int), SEEK_SET);
         fwrite(&freeVal, sizeof(int), 1, f);
 
         fseek(f, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
-        struct Block blk;
         fread(&blk, sizeof(blk), 1, f);
         currentBlock = blk.nextBlockAddress;
         printf("remove , current block: %d\n", currentBlock);
     }
     fclose(f);
 
-    /* change file descriptor to free */
     f = fopen(discName, "rb+");
-    fseek(f, db.memoryMapAddress + db.blockCount * sizeof(int) + fd.fileDescriptorAddress * sizeof(struct FileDescriptor), SEEK_SET);
+    fseek(f, db.memoryMapAddress + db.blockCount * sizeof(int) + fd.fileDescriptorAddress * sizeof(struct FileDescriptor),
+          SEEK_SET);
     fd.descriptorState = FREE;
     fwrite(&fd, sizeof(fd), 1, f);
     fclose(f);
@@ -282,30 +294,34 @@ int rmFile(char *fileName, char *discName)
 }
 
 int cpToDisc(char *fileName, char *discName)
-
 {
-    /* open local file to read*/
-    FILE *src = fopen(fileName, "rb");
+    FILE *src;
+    struct DiscBasic db;
+    FILE *disc;
+    int i, descriptorIndex;
+    struct FileDescriptor fd;
+    unsigned prevBlock, currentBlock;
+
+    src = fopen(fileName, "rb");
     if (!src)
         return -1;
 
-    struct DiscBasic db = loadDiscBasic(discName);
-    /* open disc */
-    FILE *disc = fopen(discName, "rb+");
+    db = loadDiscBasic(discName);
+    disc = fopen(discName, "rb+");
     if (!disc)
     {
         fclose(src);
         return -1;
     }
 
-    /* check if file does not exist on disc*/
-    for (int i = 0; i < (int)db.blockCount; i++)
+    for (i = 0; i < (int)db.blockCount; i++)
     {
-        struct FileDescriptor fd;
-        fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + i * sizeof(struct FileDescriptor), SEEK_SET);
-        if (fread(&fd, sizeof(fd), 1, disc) != 1)
+        struct FileDescriptor checkFd;
+        fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + i * sizeof(struct FileDescriptor),
+              SEEK_SET);
+        if (fread(&checkFd, sizeof(checkFd), 1, disc) != 1)
             break;
-        if (!strcmp(fd.fileName, fileName) && fd.descriptorState == TAKEN)
+        if (!strcmp(checkFd.fileName, fileName) && checkFd.descriptorState == TAKEN)
         {
             printf("File already exists on disc\n");
             fclose(disc);
@@ -314,10 +330,9 @@ int cpToDisc(char *fileName, char *discName)
         }
     }
 
-    /*Find free descriptor*/
     fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int), SEEK_SET);
-    int descriptorIndex = -1;
-    for (int i = 0; i < (int)db.blockCount; i++)
+    descriptorIndex = -1;
+    for (i = 0; i < (int)db.blockCount; i++)
     {
         struct FileDescriptor tmp;
         long pos = ftell(disc);
@@ -335,7 +350,7 @@ int cpToDisc(char *fileName, char *discName)
             break;
         }
     }
-    if (descriptorIndex < 0) /* failed to find free descriptor*/
+    if (descriptorIndex < 0)
     {
         printf("failed to find free descriptor");
         fclose(disc);
@@ -343,77 +358,76 @@ int cpToDisc(char *fileName, char *discName)
         return -1;
     }
 
-    /* at this point free descriptor was found */
-
-    /*Fetch descriptor and set up linking*/
-    fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + descriptorIndex * sizeof(struct FileDescriptor), SEEK_SET);
-    struct FileDescriptor fd;
+    fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + descriptorIndex * sizeof(struct FileDescriptor),
+          SEEK_SET);
     fread(&fd, sizeof(fd), 1, disc);
     fd.firstBlockAddress = 0;
 
-    unsigned prevBlock = 0, currentBlock = 0;
-    size_t bytesRead;
-    char buffer[BLOCK_SIZE];
-
-    /*Read local file in chunks and store them*/
-    while ((bytesRead = fread(buffer, 1, BLOCK_SIZE, src)) > 0)
+    prevBlock = 0;
+    currentBlock = 0;
     {
-        // Find free block
-        int freeBlock = -1;
-        fseek(disc, db.memoryMapAddress, SEEK_SET);
-        for (int i = 0; i < (int)db.blockCount; i++)
+        size_t bytesRead;
+        char buffer[BLOCK_SIZE];
+        while ((bytesRead = fread(buffer, 1, BLOCK_SIZE, src)) > 0)
         {
-            int status;
-            long mapPos = ftell(disc);
-            if (fread(&status, sizeof(status), 1, disc) != 1)
-                break;
-            if (status == FREE)
+            int freeBlock = -1;
+            fseek(disc, db.memoryMapAddress, SEEK_SET);
+            for (i = 0; i < (int)db.blockCount; i++)
             {
-                freeBlock = i + 1;
-                fseek(disc, mapPos, SEEK_SET);
-                status = TAKEN;
-                fwrite(&status, sizeof(status), 1, disc);
+                int status;
+                long mapPos = ftell(disc);
+                if (fread(&status, sizeof(status), 1, disc) != 1)
+                    break;
+                if (status == FREE)
+                {
+                    freeBlock = i + 1;
+                    fseek(disc, mapPos, SEEK_SET);
+                    status = TAKEN;
+                    fwrite(&status, sizeof(status), 1, disc);
+                    break;
+                }
+            }
+            if (freeBlock < 0)
                 break;
+
+            if (fd.firstBlockAddress == 0)
+            {
+                fd.firstBlockAddress = freeBlock;
+            }
+
+            if (prevBlock != 0)
+            {
+                struct Block pb;
+                fseek(disc, db.firstBlockAddress + (prevBlock - 1) * sizeof(struct Block),
+                      SEEK_SET);
+                fread(&pb, sizeof(pb), 1, disc);
+                pb.nextBlockAddress = freeBlock;
+                fseek(disc, -((long)sizeof(pb)), SEEK_CUR);
+                fwrite(&pb, sizeof(pb), 1, disc);
+            }
+            prevBlock = freeBlock;
+            currentBlock = freeBlock;
+
+            {
+                struct Block blk;
+                memset(&blk, 0, sizeof(blk));
+                blk.state = TAKEN;
+                blk.nextBlockAddress = 0;
+                memcpy(blk.data, buffer, bytesRead);
+                fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block),
+                      SEEK_SET);
+                fwrite(&blk, sizeof(blk), 1, disc);
+
+                printf("block of data written at: %d \n",
+                       db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block));
+                printf("first block address: %d\n", db.firstBlockAddress);
+                printf("current block address %d\n", currentBlock);
             }
         }
-        if (freeBlock < 0)
-            break;
-        // Update the file descriptor's first block if needed
-        if (fd.firstBlockAddress == 0)
-        {
-            fd.firstBlockAddress = freeBlock;
-        }
-
-        // Link blocks
-        if (prevBlock != 0)
-        {
-            fseek(disc, db.firstBlockAddress + (prevBlock - 1) * sizeof(struct Block), SEEK_SET);
-            struct Block pb;
-            fread(&pb, sizeof(pb), 1, disc);
-            pb.nextBlockAddress = freeBlock;
-            fseek(disc, -((long)sizeof(pb)), SEEK_CUR);
-            fwrite(&pb, sizeof(pb), 1, disc);
-        }
-        prevBlock = freeBlock;
-        currentBlock = freeBlock;
-
-        // Write data into the block
-        struct Block blk;
-        memset(&blk, 0, sizeof(blk));
-        blk.state = TAKEN;
-        blk.nextBlockAddress = 0;
-        memcpy(blk.data, buffer, bytesRead);
-        fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
-        fwrite(&blk, sizeof(blk), 1, disc);
-
-        int address = db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block);
-        printf("block of data written at: %d \n", address);
-        printf("first block address: %d\n", db.firstBlockAddress);
-        printf("current block address %d\n", currentBlock);
     }
 
-    // Update descriptor
-    fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + descriptorIndex * sizeof(struct FileDescriptor), SEEK_SET);
+    fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + descriptorIndex * sizeof(struct FileDescriptor),
+          SEEK_SET);
     fwrite(&fd, sizeof(fd), 1, disc);
 
     fclose(disc);
@@ -423,28 +437,34 @@ int cpToDisc(char *fileName, char *discName)
 
 int cpFromDisc(char *fileName, char *discName)
 {
+    struct FileDescriptor fd;
+    struct DiscBasic db;
+    FILE *outFile;
+    FILE *disc;
+    unsigned currentBlock;
 
-    struct FileDescriptor fd = getFileDescriptor(fileName, discName);
-    struct DiscBasic db = loadDiscBasic(discName);
+    fd = getFileDescriptor(fileName, discName);
+    db = loadDiscBasic(discName);
 
-    FILE *outFile = fopen(fileName, "wb");
+    outFile = fopen(fileName, "wb");
     if (!outFile)
         return -1;
-    FILE *disc = fopen(discName, "rb");
+
+    disc = fopen(discName, "rb");
     if (!disc)
     {
         fclose(outFile);
         return -1;
     }
 
-    unsigned currentBlock = fd.firstBlockAddress;
+    currentBlock = fd.firstBlockAddress;
     while (currentBlock)
     {
-        fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
         struct Block blk;
+        fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
         if (fread(&blk, sizeof(blk), 1, disc) != 1)
             break;
-        fwrite(blk.data, 1, strnlen(blk.data, BLOCK_SIZE), outFile);
+        fwrite(blk.data, 1, my_strnlen(blk.data, BLOCK_SIZE), outFile);
         currentBlock = blk.nextBlockAddress;
     }
 
@@ -455,15 +475,18 @@ int cpFromDisc(char *fileName, char *discName)
 
 int printTakenSpace(char *discName)
 {
-    struct DiscBasic db = loadDiscBasic(discName);
-    FILE *disc = fopen(discName, "rb");
+    struct DiscBasic db;
+    FILE *disc;
+    int takenCount = 0, mapVal, i;
+
+    db = loadDiscBasic(discName);
+    disc = fopen(discName, "rb");
     if (!disc)
     {
         return -1;
     }
-    int takenCount = 0, mapVal;
     fseek(disc, db.memoryMapAddress, SEEK_SET);
-    for (int i = 0; i < db.blockCount; i++)
+    for (i = 0; i < (int)db.blockCount; i++)
     {
         if (fread(&mapVal, sizeof(mapVal), 1, disc) != 1)
         {
@@ -482,8 +505,12 @@ int printTakenSpace(char *discName)
 
 int printMemoryMap(char *discName)
 {
-    struct DiscBasic db = loadDiscBasic(discName);
-    FILE *drive = fopen(discName, "rb");
+    struct DiscBasic db;
+    FILE *drive;
+    int i;
+
+    db = loadDiscBasic(discName);
+    drive = fopen(discName, "rb");
     if (!drive)
     {
         printf("Error opening disc\n");
@@ -491,7 +518,7 @@ int printMemoryMap(char *discName)
     }
 
     printf("Memory Map:\n");
-    for (int i = 0; i < db.blockCount; i++)
+    for (i = 0; i < (int)db.blockCount; i++)
     {
         int status;
         fseek(drive, db.memoryMapAddress + i * sizeof(int), SEEK_SET);
