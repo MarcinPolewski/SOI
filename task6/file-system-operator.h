@@ -471,3 +471,31 @@ int printTakenSpace(char *discName)
     printf("%d\n", takenCount * BLOCK_SIZE);
     return 0;
 }
+
+int printMemoryMap(char *discName)
+{
+    struct DiscBasic db = loadDiscBasic(discName);
+    FILE *drive = fopen(discName, "rb");
+    if (!drive)
+    {
+        printf("Error opening disc\n");
+        return -1;
+    }
+
+    printf("Memory Map:\n");
+    for (int i = 0; i < db.blockCount; i++)
+    {
+        int status;
+        fseek(drive, db.memoryMapAddress + i * sizeof(int), SEEK_SET);
+        if (fread(&status, sizeof(status), 1, drive) != 1)
+        {
+            printf("Failed to read map element at block %d\n", i);
+            fclose(drive);
+            return -1;
+        }
+        printf("Block %d: %s\n", i, status == TAKEN ? "TAKEN" : "FREE");
+    }
+
+    fclose(drive);
+    return 0;
+}
