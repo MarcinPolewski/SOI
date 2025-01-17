@@ -62,7 +62,6 @@ int createDisc(char *discName, int discSize)
         FREE,
         0,
         0,
-        0,
         0};
 
     struct Block emptyBlock = {
@@ -181,7 +180,7 @@ int isBlockTaken(char *discName, int blockAddress)
         exit(1);
     }
 
-    fseek(drive, db.memoryMapAddress + blockAddress * sizeof(int), SEEK_SET);
+    fseek(drive, db.memoryMapAddress + (blockAddress - 1) * sizeof(int), SEEK_SET);
     if (fread(&mapElement, sizeof(int), 1, drive))
     {
         printf("Read map element succesfully\n");
@@ -240,7 +239,7 @@ int performLsCommand(char *discName)
             break;
         if (fd.descriptorState == TAKEN)
         {
-            printf("%s\n", fd.fileName);
+            printf("name: %s first block address: %u\n", fd.fileName, fd.firstBlockAddress);
         }
     }
 
@@ -261,11 +260,11 @@ int rmFile(char *fileName, char *discName)
     unsigned currentBlock = fd.firstBlockAddress;
     while (currentBlock)
     {
-        fseek(f, db.memoryMapAddress + currentBlock * sizeof(int), SEEK_SET);
+        fseek(f, db.memoryMapAddress + (currentBlock - 1) * sizeof(int), SEEK_SET);
         int freeVal = FREE;
         fwrite(&freeVal, sizeof(int), 1, f);
 
-        fseek(f, db.firstBlockAddress + currentBlock * sizeof(struct Block), SEEK_SET);
+        fseek(f, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
         struct Block blk;
         fread(&blk, sizeof(blk), 1, f);
         currentBlock = blk.nextBlockAddress;
@@ -337,6 +336,7 @@ int cpToDisc(char *fileName, char *discName)
     }
     if (descriptorIndex < 0) /* failed to find free descriptor*/
     {
+        printf("failed to find free descriptor");
         fclose(disc);
         fclose(src);
         return -1;
@@ -348,6 +348,7 @@ int cpToDisc(char *fileName, char *discName)
     fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + descriptorIndex * sizeof(struct FileDescriptor), SEEK_SET);
     struct FileDescriptor fd;
     fread(&fd, sizeof(fd), 1, disc);
+    fd.firstBlockAddress = 0;
 
     unsigned prevBlock = 0, currentBlock = 0;
     size_t bytesRead;
@@ -367,7 +368,7 @@ int cpToDisc(char *fileName, char *discName)
                 break;
             if (status == FREE)
             {
-                freeBlock = i;
+                freeBlock = i + 1;
                 fseek(disc, mapPos, SEEK_SET);
                 status = TAKEN;
                 fwrite(&status, sizeof(status), 1, disc);
@@ -376,10 +377,11 @@ int cpToDisc(char *fileName, char *discName)
         }
         if (freeBlock < 0)
             break;
-
         // Update the file descriptor's first block if needed
         if (fd.firstBlockAddress == 0)
+        {
             fd.firstBlockAddress = freeBlock;
+        }
 
         // Link blocks
         if (prevBlock != 0)
@@ -400,8 +402,13 @@ int cpToDisc(char *fileName, char *discName)
         blk.state = TAKEN;
         blk.nextBlockAddress = 0;
         memcpy(blk.data, buffer, bytesRead);
-        fseek(disc, db.firstBlockAddress + currentBlock * sizeof(struct Block), SEEK_SET);
+        fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
         fwrite(&blk, sizeof(blk), 1, disc);
+
+        int address = db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block);
+        printf("block of data written at: %d \n", address);
+        printf("first block address: %d\n", db.firstBlockAddress);
+        printf("current block address %d\n", currentBlock);
     }
 
     // Update descriptor
@@ -432,7 +439,7 @@ int cpFromDisc(char *fileName, char *discName)
     unsigned currentBlock = fd.firstBlockAddress;
     while (currentBlock)
     {
-        fseek(disc, db.firstBlockAddress + currentBlock * sizeof(struct Block), SEEK_SET);
+        fseek(disc, db.firstBlockAddress + (currentBlock - 1) * sizeof(struct Block), SEEK_SET);
         struct Block blk;
         if (fread(&blk, sizeof(blk), 1, disc) != 1)
             break;
@@ -493,7 +500,7 @@ int printMemoryMap(char *discName)
             fclose(drive);
             return -1;
         }
-        printf("Block %d: %s\n", i, status == TAKEN ? "TAKEN" : "FREE");
+        printf("Block %d: %s\n", i + 1, status == TAKEN ? "TAKEN" : "FREE");
     }
 
     fclose(drive);
