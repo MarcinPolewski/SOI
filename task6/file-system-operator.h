@@ -49,7 +49,7 @@ int createDisc(char *discName, int discSize)
     // blocksSize = blockCount * sizeof(struct Block);
     // basicInfoSize = sizeof(struct DiscBasic);
     memoryMapAddress = sizeof(struct DiscBasic);
-    firstBlockAddress = memoryMapAddress + blockCount * sizeof(int);
+    firstBlockAddress = memoryMapAddress + blockCount * (sizeof(int) + sizeof(struct FileDescriptor));
 
     struct DiscBasic db = {
         discSize,
