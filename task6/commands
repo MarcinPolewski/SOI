@@ -1,7 +1,14 @@
 ./main create_disc my_disc 20000
 ./main rm "file" my_disc
-./main cp_to_disc test.txt my_disc
 ./main ls my_disc
 ./main cp_from_disc test.txt my_disc
 ./main cp_to_disc test.txt my_disc
 ./main print_taken_space my_disc
+./main print_memory_map my_disc
+
+
+./main cp_to_disc test2.txt my_disc
+./main cp_from_disc test2.txt my_disc
+./main cp_to_disc test3.txt my_disc
+./main cp_from_disc test3.txt my_disc
+rm test.txt my_disc

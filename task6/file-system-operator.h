@@ -268,6 +268,7 @@ int rmFile(char *fileName, char *discName)
         struct Block blk;
         fread(&blk, sizeof(blk), 1, f);
         currentBlock = blk.nextBlockAddress;
+        printf("remove , current block: %d\n", currentBlock);
     }
     fclose(f);
 
@@ -386,7 +387,7 @@ int cpToDisc(char *fileName, char *discName)
         // Link blocks
         if (prevBlock != 0)
         {
-            fseek(disc, db.firstBlockAddress + prevBlock * sizeof(struct Block), SEEK_SET);
+            fseek(disc, db.firstBlockAddress + (prevBlock - 1) * sizeof(struct Block), SEEK_SET);
             struct Block pb;
             fread(&pb, sizeof(pb), 1, disc);
             pb.nextBlockAddress = freeBlock;
