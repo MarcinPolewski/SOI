@@ -298,6 +298,22 @@ int cpToDisc(char *fileName, char *discName)
         return -1;
     }
 
+    /* check if file does not exist on disc*/
+    for (int i = 0; i < (int)db.blockCount; i++)
+    {
+        struct FileDescriptor fd;
+        fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int) + i * sizeof(struct FileDescriptor), SEEK_SET);
+        if (fread(&fd, sizeof(fd), 1, disc) != 1)
+            break;
+        if (!strcmp(fd.fileName, fileName) && fd.descriptorState == TAKEN)
+        {
+            printf("File already exists on disc\n");
+            fclose(disc);
+            fclose(src);
+            return -1;
+        }
+    }
+
     /*Find free descriptor*/
     fseek(disc, db.memoryMapAddress + db.blockCount * sizeof(int), SEEK_SET);
     int descriptorIndex = -1;
