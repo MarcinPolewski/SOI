@@ -244,6 +244,34 @@ int performLsCommand(char *discName)
         struct FileDescriptor fd;
         if (fread(&fd, sizeof(fd), 1, drive) != 1)
             break;
+        if (fd.descriptorState == TAKEN && fd.fileName[0] != '.')
+        {
+            printf("name: %s first block address: %u\n", fd.fileName, fd.firstBlockAddress);
+        }
+    }
+
+    fclose(drive);
+    return 0;
+}
+
+int performLsAllCommand(char *discName)
+{
+    struct DiscBasic db;
+    FILE *drive;
+    int i;
+
+    db = loadDiscBasic(discName);
+    drive = fopen(discName, "rb");
+    if (!drive)
+        exit(-1);
+
+    fseek(drive, db.memoryMapAddress + db.blockCount * sizeof(int), SEEK_SET);
+
+    for (i = 0; i < (int)db.blockCount; i++)
+    {
+        struct FileDescriptor fd;
+        if (fread(&fd, sizeof(fd), 1, drive) != 1)
+            break;
         if (fd.descriptorState == TAKEN)
         {
             printf("name: %s first block address: %u\n", fd.fileName, fd.firstBlockAddress);

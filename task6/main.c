@@ -24,6 +24,18 @@ int main(int argc, char **argv)
                 printf("Operation failed\n");
             }
         }
+        else if (argc == 4 && strcmp(argv[2], "-a") == 0)
+        {
+            operationResult = performLsAllCommand(argv[3]);
+            if (operationResult == 0)
+            {
+                printf("Operation completed successfully\n");
+            }
+            else
+            {
+                printf("Operation failed\n");
+            }
+        }
         else
         {
             printf("Invalid number of arguments\n");
