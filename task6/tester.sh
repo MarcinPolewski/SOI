@@ -116,4 +116,15 @@ echo "====== comparing test4.txt with blueprint4.txt ======"
 echo ""
 diff test4.txt blueprint3.txt
 
+echo "====== upploading a hidden file ======"
+echo ""
+./main cp_to_disc ".hidden.txt" "my_disc"
+
+echo "====== performing ls ======"
+echo ""
+./main ls "my_disc"
+
+echo "====== performing ls -a  ======"
+./main ls -a "my_disc"
+
 echo "finished testing "
